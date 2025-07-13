@@ -1440,19 +1440,30 @@ class PasswordManager {
    */
   async handleGoogleLogin() {
     try {
+      // Get current OAuth port
+      const oauthPort = await window.plugin.googleDrive.getOAuthPort();
+      
       // Get authorization URL
-      const authUrl = window.plugin.googleDrive.getAuthUrl();
+      const authUrl = await window.plugin.googleDrive.getAuthUrl();
       
       // Open popup window for OAuth
       const popup = window.open(authUrl, 'googleAuth', 'width=500,height=600');
       
       // Listen for authorization code
       const messageHandler = async (event) => {
-        // Accept messages from localhost callback server
-        if (event.origin !== 'http://localhost:3000' && event.origin !== 'null') return;
+        // Accept messages from localhost callback server (any port)
+        if (!event.origin.startsWith('http://localhost:') && event.origin !== 'null') {
+          return;
+        }
         
         if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
           const { code } = event.data;
+          
+          // Clear timeout
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
           
           // Remove event listener
           window.removeEventListener('message', messageHandler);
@@ -1462,8 +1473,12 @@ class PasswordManager {
           
           if (result.success) {
             // Close popup
-            if (popup && !popup.closed) {
-              popup.close();
+            try {
+              if (popup && !popup.closed) {
+                popup.close();
+              }
+            } catch (error) {
+              // Continue without closing popup
             }
             
             // Remove dialog
@@ -1478,6 +1493,12 @@ class PasswordManager {
             this.showNotification('Failed to connect to Google Drive: ' + result.error, 'error');
           }
         } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+          // Clear timeout
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
           // Remove event listener
           window.removeEventListener('message', messageHandler);
           
@@ -1486,6 +1507,25 @@ class PasswordManager {
       };
       
       window.addEventListener('message', messageHandler);
+      
+      // Add timeout to handle cases where popup is blocked or fails
+      let timeoutId = setTimeout(() => {
+        try {
+          // Check if popup is accessible
+          if (popup) {
+            // Try to access popup properties safely
+            const isClosed = popup.closed;
+            if (isClosed) {
+              window.removeEventListener('message', messageHandler);
+              this.showNotification('Google Drive login popup was closed. Please try again.', 'error');
+            }
+          }
+        } catch (error) {
+          // Handle COOP policy error
+          window.removeEventListener('message', messageHandler);
+          this.showNotification('Google Drive login popup was closed. Please try again.', 'error');
+        }
+      }, 30000); // 30 second timeout
       
     } catch (error) {
       this.showNotification('Failed to start Google Drive login: ' + error.message, 'error');

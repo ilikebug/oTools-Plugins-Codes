@@ -3,12 +3,15 @@ const url = require('url');
 const fs = require('fs');
 const path = require('path');
 
+// Use a fixed port that's less likely to be used by other applications
+const FIXED_PORT = 12345;
+
 // Generate random port between 10000-65535 to avoid conflicts
 function getRandomPort() {
   return Math.floor(Math.random() * (65535 - 10000 + 1)) + 10000;
 }
 
-const PORT = process.env.OAUTH_PORT || getRandomPort();
+const PORT = process.env.OAUTH_PORT || FIXED_PORT;
 
 // Set environment variable so other modules can access it
 process.env.OAUTH_PORT = PORT.toString();
@@ -52,44 +55,46 @@ const callbackHTML = `
   </div>
 
   <script>
-    // Parse URL parameters
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const error = urlParams.get('error');
-    
     const messageElement = document.getElementById('message');
+    
+    // Function to send message to opener
+    function sendMessageToOpener(type, data) {
+      if (window.opener) {
+        try {
+          window.opener.postMessage({ type: type, ...data }, '*');
+        } catch (error) {
+          // Handle error silently
+        }
+        
+        // Also try to close the window after a short delay
+        setTimeout(() => {
+          try {
+            if (!window.closed) {
+              window.close();
+            }
+          } catch (error) {
+            // Handle error silently
+          }
+        }, 1000);
+      }
+    }
     
     if (error) {
       messageElement.textContent = 'Authorization failed: ' + error;
       messageElement.className = 'error';
-      
-      // Send error message to parent window
-      if (window.opener) {
-        window.opener.postMessage({
-          type: 'GOOGLE_AUTH_ERROR',
-          error: error
-        }, '*');
-      }
+      sendMessageToOpener('GOOGLE_AUTH_ERROR', { error: error });
     } else if (code) {
       messageElement.textContent = 'Authorization successful! You can close this window.';
       messageElement.className = 'success';
-      
-      // Send success message to parent window
-      if (window.opener) {
-        window.opener.postMessage({
-          type: 'GOOGLE_AUTH_SUCCESS',
-          code: code
-        }, '*');
-      }
+      sendMessageToOpener('GOOGLE_AUTH_SUCCESS', { code: code });
     } else {
       messageElement.textContent = 'Invalid authorization response';
       messageElement.className = 'error';
+      sendMessageToOpener('GOOGLE_AUTH_ERROR', { error: 'Invalid authorization response' });
     }
-    
-    // Close window after 2 seconds
-    setTimeout(() => {
-      window.close();
-    }, 2000);
   </script>
 </body>
 </html>
@@ -120,21 +125,71 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`OAuth callback server running on http://localhost:${PORT}`);
-  console.log(`Callback URL: http://localhost:${PORT}/callback`);
-  
-  // Export the port for other modules to use
-  module.exports.port = PORT;
-});
+// Function to start OAuth server
+let isServerStarted = false;
+
+function startOAuthServer() {
+  return new Promise((resolve, reject) => {
+    // Check if server is already started
+    if (isServerStarted) {
+      resolve(PORT);
+      return;
+    }
+    
+    server.listen(PORT, () => {
+      isServerStarted = true;
+      resolve(PORT);
+    });
+    
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        // Port is in use, try a random port
+        const newPort = getRandomPort();
+        server.listen(newPort, () => {
+          isServerStarted = true;
+          resolve(newPort);
+        });
+      } else {
+        reject(error);
+      }
+    });
+  });
+}
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nShutting down OAuth server...');
-  server.close(() => {
-    console.log('OAuth server stopped.');
-    process.exit(0);
+function stopOAuthServer() {
+  return new Promise((resolve) => {
+    if (!isServerStarted) {
+      resolve();
+      return;
+    }
+    
+    server.close(() => {
+      isServerStarted = false;
+      resolve();
+    });
   });
-});
+}
 
-module.exports = server;  
+// If run directly, start the server
+if (require.main === module) {
+  startOAuthServer().catch(console.error);
+  
+  // Handle shutdown signals
+  process.on('SIGINT', () => {
+    stopOAuthServer().then(() => process.exit(0));
+  });
+
+  process.on('SIGTERM', () => {
+    stopOAuthServer().then(() => process.exit(0));
+  });
+}
+
+module.exports = {
+  server,
+  port: PORT,
+  callbackHTML,
+  startOAuthServer,
+  stopOAuthServer,
+  getPort: () => PORT
+};  

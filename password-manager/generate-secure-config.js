@@ -8,7 +8,7 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-console.log('🔐 Google API 安全配置生成器');
+console.log('🔐 Google API Secure Configuration Generator');
 console.log('================================');
 
 // Simple obfuscation function
@@ -21,23 +21,23 @@ async function generateConfig() {
   try {
     // Get Client ID
     const clientId = await new Promise((resolve) => {
-      rl.question('请输入您的 Google Client ID: ', resolve);
+      rl.question('Please enter your Google Client ID: ', resolve);
     });
 
     // Get Client Secret
     const clientSecret = await new Promise((resolve) => {
-      rl.question('请输入您的 Google Client Secret: ', resolve);
+      rl.question('Please enter your Google Client Secret: ', resolve);
     });
 
     // Generate obfuscated values
     const obfuscatedClientId = obfuscate(clientId);
     const obfuscatedClientSecret = obfuscate(clientSecret);
 
-    console.log('\n✅ 生成的混淆配置:');
+    console.log('\n✅ Generated obfuscated configuration:');
     console.log('================================');
     console.log(`OBFUSCATED_CLIENT_ID = '${obfuscatedClientId}'`);
     console.log(`OBFUSCATED_CLIENT_SECRET = '${obfuscatedClientSecret}'`);
-    console.log('\n📝 请将这些值复制到 secure-config.js 文件中');
+    console.log('\n📝 Please copy these values to the secure-config.js file');
 
     // Generate the complete secure-config.js content
     const configContent = `// Secure configuration for Google API credentials
@@ -59,18 +59,16 @@ const OBFUSCATED_CLIENT_SECRET = '${obfuscatedClientSecret}';
 // Export secure configuration
 module.exports = {
   getClientId: () => deobfuscate(OBFUSCATED_CLIENT_ID),
-  getClientSecret: () => deobfuscate(OBFUSCATED_CLIENT_SECRET),
-  getRedirectUri: () => 'http://localhost:3000/callback'
 };
 `;
 
-    console.log('\n📄 完整的 secure-config.js 文件内容:');
+    console.log('\n📄 Complete secure-config.js file content:');
     console.log('================================');
     console.log(configContent);
 
     rl.close();
   } catch (error) {
-    console.error('❌ 生成配置时出错:', error.message);
+    console.error('❌ Error generating configuration:', error.message);
     rl.close();
   }
 }

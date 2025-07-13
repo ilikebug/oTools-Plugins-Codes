@@ -11,12 +11,11 @@ const deobfuscate = (str) => {
 };
 
 // Obfuscated credentials
-const OBFUSCATED_CLIENT_ID = 'OTIwMzQ4MjkwMjYyLTUxNWkya2t1cDVqZ3AwNzVmdmRpdjhhaXNlZjc4ZHE2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t';
-const OBFUSCATED_CLIENT_SECRET = 'R09DU1BYLXlaNVZNRXRzcjh3WEp5RjlsY1Zfa0NCVFBWVGY=';
+const OBFUSCATED_CLIENT_ID = 'OTIwMzQ4MjkwMjYyLTUxNWkyZWt1cDVqZ3AwNzVmdmRpdjhhaXNlZjc4ZHE2LmFwcHMuZ29vZ2xldXNlcmNvbnRlbnQuY29t';
+const OBFUSCATED_CLIENT_SECRET = 'R09DU1BYLU4yeHJmbTNvdlFDTktEaFNBM1g4bXAtYTZxbW4=';
 
 // Export secure configuration
 module.exports = {
   getClientId: () => deobfuscate(OBFUSCATED_CLIENT_ID),
   getClientSecret: () => deobfuscate(OBFUSCATED_CLIENT_SECRET),
-  getRedirectUri: () => `http://localhost:${process.env.OAUTH_PORT || 10000}/callback`
-}; 
+};

@@ -6,15 +6,41 @@ const { authenticator } = require('otplib');
 const { google } = require('googleapis');
 const Store = require('electron-store');
 
-// Start OAuth callback server
+// Start OAuth server and get port
+let oauthPort = null;
 let oauthServer = null;
-try {
-  const OAuthServer = require('./oauth-server');
-  oauthServer = OAuthServer;
-  console.log('OAuth callback server started');
-} catch (error) {
-  console.log('OAuth server not available:', error.message);
+let oauthServerStarted = false;
+
+async function initializeOAuthServer() {
+  // If already started, return the port
+  if (oauthServerStarted && oauthPort) {
+    return oauthPort;
+  }
+  
+  try {
+    const OAuthServer = require('./oauth-server');
+    oauthPort = await OAuthServer.startOAuthServer();
+    oauthServer = OAuthServer;
+    oauthServerStarted = true;
+    return oauthPort;
+  } catch (error) {
+    // If server is already running, try to get the port
+    if (error.message.includes('Listen method has been called more than once') || 
+        error.message.includes('EADDRINUSE')) {
+      const OAuthServer = require('./oauth-server');
+      oauthPort = OAuthServer.port;
+      oauthServer = OAuthServer;
+      oauthServerStarted = true;
+      return oauthPort;
+    }
+    // Last resort: use fixed port
+    oauthPort = 12345;
+    return oauthPort;
+  }
 }
+
+// Initialize OAuth server immediately
+initializeOAuthServer();
 
 // Initialize store for Google Drive tokens
 const store = new Store();
@@ -22,18 +48,23 @@ const store = new Store();
 // Secure Google API configuration
 const secureConfig = require('./secure-config');
 
-// Get OAuth server port from environment variable
-const oauthPort = process.env.OAUTH_PORT || 10000;
-
 // Initialize Google OAuth2 client with secure configuration
-const oauth2Client = new google.auth.OAuth2(
-  secureConfig.getClientId(),
-  secureConfig.getClientSecret(),
-  `http://localhost:${oauthPort}/callback`
-);
+let oauth2Client = null;
+let drive = null;
 
-// Google Drive API
-const drive = google.drive({ version: 'v3', auth: oauth2Client });
+// Initialize OAuth2 client with current port
+function initializeOAuth2Client(port) {
+  oauth2Client = new google.auth.OAuth2(
+    secureConfig.getClientId(),
+    secureConfig.getClientSecret(),
+    `http://localhost:${port}/callback`
+  );
+  
+  drive = google.drive({ version: 'v3', auth: oauth2Client });
+}
+
+// Initialize with current port (will be updated when OAuth server starts)
+initializeOAuth2Client(oauthPort || 10000);
 
 // Expose plugin object with generateTotp and Google Drive APIs
 contextBridge.exposeInMainWorld('plugin', {
@@ -54,17 +85,42 @@ contextBridge.exposeInMainWorld('plugin', {
   
   // Google Drive API methods
   googleDrive: {
+    // Get current OAuth port
+    getOAuthPort: async () => {
+      if (oauthPort) {
+        return oauthPort;
+      }
+      // Wait for OAuth server to start
+      return await initializeOAuthServer();
+    },
+    
+    // Reinitialize OAuth2 client with current port
+    reinitializeOAuth: async () => {
+      const currentPort = await initializeOAuthServer();
+      initializeOAuth2Client(currentPort);
+      return currentPort;
+    },
+    
     // Get Google OAuth URL for authorization
-    getAuthUrl: () => {
+    getAuthUrl: async () => {
+      // Ensure we have the latest port
+      const currentPort = await initializeOAuthServer();
+      
+      // Always reinitialize with current port to ensure consistency
+      oauthPort = currentPort;
+      initializeOAuth2Client(currentPort);
+      
       const scopes = [
         'https://www.googleapis.com/auth/drive.file'
       ];
       
-      return oauth2Client.generateAuthUrl({
+      const authUrl = oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: scopes,
         prompt: 'consent'
       });
+      
+      return authUrl;
     },
     
     // Exchange authorization code for tokens
@@ -111,7 +167,7 @@ contextBridge.exposeInMainWorld('plugin', {
       try {
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
-          const refreshResult = await contextBridge.exposeInMainWorld('plugin').googleDrive.refreshToken();
+          const refreshResult = await this.refreshToken();
           if (!refreshResult.success) {
             throw new Error('Authentication required');
           }
@@ -161,7 +217,7 @@ contextBridge.exposeInMainWorld('plugin', {
       try {
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
-          const refreshResult = await contextBridge.exposeInMainWorld('plugin').googleDrive.refreshToken();
+          const refreshResult = await this.refreshToken();
           if (!refreshResult.success) {
             throw new Error('Authentication required');
           }
@@ -194,7 +250,7 @@ contextBridge.exposeInMainWorld('plugin', {
       try {
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
-          const refreshResult = await contextBridge.exposeInMainWorld('plugin').googleDrive.refreshToken();
+          const refreshResult = await this.refreshToken();
           if (!refreshResult.success) {
             throw new Error('Authentication required');
           }

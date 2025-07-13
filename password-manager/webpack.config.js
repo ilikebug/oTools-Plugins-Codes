@@ -43,9 +43,6 @@ module.exports = {
     extensions: ['.js']
   },
   externals: {
-    'electron': 'commonjs electron',
-    'googleapis': 'commonjs googleapis',
-    'otplib': 'commonjs otplib',
-    'electron-store': 'commonjs electron-store'
+    'electron': 'commonjs electron'
   }
 }; 
