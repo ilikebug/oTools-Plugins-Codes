@@ -33,7 +33,7 @@ filesToCopy.forEach(file => {
   }
 });
 
-// Update paths in plugin.json
+// Update plugin.json path
 const pluginJsonPath = path.join(distPath, 'plugin.json');
 if (fs.existsSync(pluginJsonPath)) {
   const pluginConfig = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));

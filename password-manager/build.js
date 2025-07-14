@@ -25,12 +25,12 @@ function copyDirectory(source, destination) {
   }
 }
 
-console.log('🔨 Starting password manager plugin build...');
+console.log('🔨 Start building Password Manager plugin...');
 
 // Check if dist directory exists
 const distPath = path.join(__dirname, 'dist');
 if (!fs.existsSync(distPath)) {
-  console.log('❌ dist directory does not exist, please run npm run build first');
+  console.log('❌ dist directory does not exist. Please run npm run build first.');
   process.exit(1);
 }
 
@@ -39,9 +39,7 @@ const filesToCopy = [
   'index.html',
   'index.css',
   'icon.png',
-  'plugin.json',
-  'oauth-callback.html',
-  'package.json'
+  'plugin.json'
 ];
 
 // Dependencies to copy
@@ -121,6 +119,6 @@ child.on('close', (code) => {
 fs.writeFileSync(path.join(distPath, 'start.js'), startScript);
 console.log('✅ Created startup script');
 
-console.log('\n🎉 Build completed!');
+console.log('\n🎉 Build complete!');
 console.log('📁 Compiled files are in the dist/ directory');
 console.log('🚀 Run: cd dist && npm start'); 
