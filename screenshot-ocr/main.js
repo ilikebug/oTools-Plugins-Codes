@@ -363,17 +363,22 @@ class OCRPlugin {
             this.updateStatus('No image to save');
             return;
         }
-        
+        await window.otools.hideWindow();
         const result = await window.otools.showSaveDialog();
         if (result && result.filePath) {
             try {
-                await window.otools.writeFile(result.filePath, `data:image/png;base64,${this.currentImageData}`);
+                let wirteContent = this.currentImageData;
+                if (!wirteContent.startsWith('data:image/png;base64')) {
+                    wirteContent = `data:image/png;base64,${wirteContent}`
+                }
+                await window.otools.writeFile(result.filePath, wirteContent);
                 this.updateStatus('Image saved successfully', 'copy-success');
             } catch (error) {
                 console.error('Save failed:', error);
                 this.updateStatus('Save failed');
             }
         }
+        await window.otools.showWindow();
     }
     
     // ============================================================================
@@ -525,6 +530,7 @@ class OCRPlugin {
      */
     async loadFileAndOcr() {
         try {
+            await window.otools.hideWindow();
             const result = await window.otools.showOpenDialog({
                 properties: ['openFile'],
                 filters: [
@@ -537,16 +543,14 @@ class OCRPlugin {
                 this.updateStatus('File selection cancelled');
                 return;
             }
-            
+            await window.otools.showWindow();
+
             const filePath = result.filePaths[0];
             this.updateStatus('Loading file...');
             this.prepareForProcessing();
             this.setProcessingText('Processing file...');
             
-            const fileData = await window.otools.readFile(filePath);
-            console.log('File data received:', fileData);
-            console.log('File data type:', typeof fileData);
-            
+            const fileData = await window.otools.readFile(filePath);      
             if (!fileData || !fileData.success) {
                 throw new Error('Failed to read file');
             }
@@ -554,7 +558,6 @@ class OCRPlugin {
             const imageData = this.processFileData(fileData, filePath);
             this.displayImageFromDataUrl(imageData);
             this.currentImageData = imageData;
-            
             this.updateStatus('Performing OCR...');
             const ocrResult = await window.otools.performOcr(imageData);
             
@@ -583,7 +586,6 @@ class OCRPlugin {
      */
     processFileData(fileData, filePath) {
         if (fileData.content && fileData.content.startsWith('data:')) {
-            console.log('File data is already a data URL');
             return fileData.content;
         }
         
@@ -598,7 +600,6 @@ class OCRPlugin {
         
         const mimeType = this.getMimeType(filePath);
         const imageData = `data:${mimeType};base64,${base64Data}`;
-        console.log('Converted to data URL, length:', imageData.length);
         
         return imageData;
     }
@@ -621,9 +622,7 @@ class OCRPlugin {
             
             setTimeout(() => {
                 statusText.style.opacity = '1';
-            }, 150);
-            
-            console.log('Status updated:', message);
+            }, 150);          
         } else {
             console.error('statusText element not found');
         }
