@@ -3,16 +3,16 @@
 const fs = require('fs');
 const path = require('path');
 
-console.log('🔨 开始构建剪贴板管理器插件...');
+console.log('🔨 Start building Clipboard Manager plugin...');
 
-// 检查dist目录是否存在
+// Check if dist directory exists
 const distPath = path.join(__dirname, 'dist');
 if (!fs.existsSync(distPath)) {
-  console.log('❌ dist目录不存在，请先运行 npm run build');
+  console.log('❌ dist directory does not exist. Please run npm run build first.');
   process.exit(1);
 }
 
-// 复制必要的文件到dist目录
+// Copy necessary files to dist directory
 const filesToCopy = [
   'index.html',
   'index.css',
@@ -20,32 +20,32 @@ const filesToCopy = [
   'plugin.json'
 ];
 
-console.log('📁 复制静态文件...');
+console.log('📁 Copying static files...');
 filesToCopy.forEach(file => {
   const sourcePath = path.join(__dirname, file);
   const destPath = path.join(distPath, file);
   
   if (fs.existsSync(sourcePath)) {
     fs.copyFileSync(sourcePath, destPath);
-    console.log(`✅ 复制 ${file}`);
+    console.log(`✅ Copied ${file}`);
   } else {
-    console.log(`⚠️  文件不存在: ${file}`);
+    console.log(`⚠️  File does not exist: ${file}`);
   }
 });
 
-// 更新plugin.json中的路径
+// Update paths in plugin.json
 const pluginJsonPath = path.join(distPath, 'plugin.json');
 if (fs.existsSync(pluginJsonPath)) {
   const pluginConfig = JSON.parse(fs.readFileSync(pluginJsonPath, 'utf8'));
   
-  // 更新HTML文件路径
+  // Update HTML file path
   if (pluginConfig.ui && pluginConfig.ui.html) {
     pluginConfig.ui.html = 'index.html';
   }
   
   fs.writeFileSync(pluginJsonPath, JSON.stringify(pluginConfig, null, 2));
-  console.log('✅ 更新 plugin.json');
+  console.log('✅ Updated plugin.json');
 }
 
-console.log('\n🎉 构建完成！');
-console.log('📁 编译后的文件在 dist/ 目录中'); 
+console.log('\n🎉 Build complete!');
+console.log('📁 Compiled files are in the dist/ directory'); 

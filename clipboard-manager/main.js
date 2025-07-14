@@ -147,7 +147,6 @@ class ClipboardManager {
         const content = list[idx];
         await this.copyToClipboard(content);
         await window.otools.hideWindow();
-        setTimeout(() => this.paste(), 100);
       }
     });
 
@@ -229,8 +228,6 @@ class ClipboardManager {
         const content = list[selectedIdx];
         this.copyToClipboard(content);
         window.otools.hideWindow();
-        e.preventDefault();
-        setTimeout(() => this.paste(), 100);
       }
     };
     document.addEventListener('keydown', this._keydownHandler);
@@ -333,23 +330,6 @@ class ClipboardManager {
     } else if (item.type === 'image') {
       await window.otools.writeClipboardImage(item.data);
     }
-  }
-
-  // Simulate paste 
-  async paste() {
-    const pos = await window.otools.getMousePosition();
-    if (pos && pos.success) {
-      await window.otools.simulateMouse('click', 
-        { x: pos.x, y: pos.y, button: 'left' }); 
-    }
-    let modifiers = ['command'];
-    if (window.plugin.getplatformName() === 'win32' ||
-        window.plugin.getplatformName() === 'linux') {
-      modifiers = ['control'];
-    }
-    setTimeout(() => {
-      window.otools.simulateKeyboard('keyTap', { key: 'v', modifiers });
-    }, 100);
   }
 
   // fav methods
