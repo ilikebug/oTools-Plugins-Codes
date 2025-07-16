@@ -16,6 +16,7 @@ class ClipboardManager {
     this.historyList = [] 
     this.favList = []
     this.showFavOnly = false 
+    this.clusterize = null;
 
     this.init();
   }
@@ -101,19 +102,24 @@ class ClipboardManager {
     await this.setHistory(this.historyList)
   } 
 
+  /**
+   * Render clipboard history list, optimized with virtual list for performance
+   */
   renderHistoryList(list) {
-
     if (this.showFavOnly) {
       list = [...this.favList].reverse();
     } else if (!list) {
       list = [...this.historyList].reverse();
     }
     const mainContent = document.querySelector('.main-content');
+    const scrollArea = document.getElementById('scrollArea');
+    const contentArea = document.getElementById('contentArea');
     if (!list || list.length === 0) {
-      mainContent.innerHTML = '<div class="empty">No clipboard history.</div>';
+      if (contentArea) contentArea.innerHTML = '<div class="empty">No clipboard history.</div>';
       return;
     }
-    mainContent.innerHTML = '<div class="clip-list">' + list.map((item, idx) => {
+    // Generate HTML for each item
+    const rows = list.map((item, idx) => {
       const isFav = this.isFav(item) ? 'fav' : '';
       const starIcon = `<button class="clip-fav-btn ${isFav}" data-index="${idx}" title="Favorite">
         <svg viewBox="0 0 20 20" fill="none" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
@@ -124,7 +130,7 @@ class ClipboardManager {
         return `<div class='clip-item' data-index='${idx}'>
           <div class='clip-content' data-fulltext="${this.escapeHtml(item.data)}">${this.escapeHtml(item.data)}</div>
           ${starIcon}
-        </div>`; 
+        </div>`;
       } else if (item.type === 'image') {
         return `<div class='clip-item' data-index='${idx}'>
           <img class='clip-img' src='${item.data}' loading="lazy" />
@@ -134,68 +140,74 @@ class ClipboardManager {
         return `<div class='clip-item' data-index='${idx}'>
           <div class='clip-content'>[Unknown type]</div>
           ${starIcon}
-        </div>`; 
-      } 
-    }).join('') + '</div>';
-
-    // bind click event
-    const items = mainContent.querySelectorAll('.clip-item');
-    items.forEach(item => {
-      item.onclick = async (e) => {
+        </div>`;
+      }
+    });
+    // Initialize or update Clusterize
+    if (!this.clusterize) {
+      this.clusterize = new window.Clusterize({
+        rows,
+        scrollId: 'scrollArea',
+        contentId: 'contentArea',
+        no_data_text: ''
+      });
+    } else {
+      this.clusterize.update(rows);
+    }
+    // Event delegation binding
+    if (contentArea) {
+      contentArea.onclick = async (e) => {
+        const item = e.target.closest('.clip-item');
+        if (!item) return;
         if (e.target.closest('.clip-fav-btn')) return;
         const idx = item.getAttribute('data-index');
         const content = list[idx];
         await this.copyToClipboard(content);
         await window.otools.hideWindow();
-      }
-    });
-
-    const favBtns = mainContent.querySelectorAll('.clip-fav-btn');
-    favBtns.forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const idx = btn.getAttribute('data-index');
-        const content = list[idx];
-        if (this.isFav(content)) {
-          this.removeFromFav(content);
-        } else {
-          this.addToFav(content);
-        }
-        this.renderHistoryList(list);
-      }
-    });
-
-    // bind keyboard navigation
+      };
+      contentArea.querySelectorAll('.clip-fav-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const idx = btn.getAttribute('data-index');
+          const content = list[idx];
+          if (this.isFav(content)) {
+            this.removeFromFav(content);
+          } else {
+            this.addToFav(content);
+          }
+          this.renderHistoryList(list);
+        };
+      });
+      // tooltip
+      contentArea.querySelectorAll('.clip-content').forEach(el => {
+        el.addEventListener('mouseenter', (e) => {
+          el.style.maxHeight = 'none';
+          el.style.webkitLineClamp = 'unset';
+          el.style.overflow = 'visible';
+        });
+        el.addEventListener('mouseleave', (e) => {
+          el.style.maxHeight = '60px';
+          el.style.webkitLineClamp = 3;
+          el.style.overflow = 'hidden';
+        });
+      });
+    }
+    // Keyboard navigation still uses the original method
     this.bindKeyboardNavigation(list);
-
-    // bind tooltip for text content
-    const textContents = mainContent.querySelectorAll('.clip-content');
-    textContents.forEach(el => {
-      el.addEventListener('mouseenter', (e) => {
-        el.style.maxHeight = 'none';
-        el.style.webkitLineClamp = 'unset';
-        el.style.overflow = 'visible';
-      });
-      el.addEventListener('mouseleave', (e) => {
-        el.style.maxHeight = '60px';
-        el.style.webkitLineClamp = 3;
-        el.style.overflow = 'hidden';
-      });
-    });
   }
 
   // Keyboard navigation for clipboard items
-  bindKeyboardNavigation(list) {
+  bindKeyboardNavigation(list, startIdx = 0, endIdx = list.length) {
     // Remove previous listeners
     if (this._keydownHandler) {
       document.removeEventListener('keydown', this._keydownHandler);
     }
-    let selectedIdx = 0;
+    let selectedIdx = startIdx;
     const items = document.querySelectorAll('.clip-item');
     if (items.length === 0) return;
     // Set initial highlight
     items.forEach((el, idx) => {
-      el.classList.toggle('selected', idx === selectedIdx);
+      el.classList.toggle('selected', idx === 0);
     });
     this._keydownHandler = (e) => {
       if (e.key === 'Tab' && document.activeElement.tagName !== 'INPUT') {
@@ -211,18 +223,18 @@ class ClipboardManager {
         return;
       }
       if (e.key === 'ArrowDown') {
-        selectedIdx = (selectedIdx + 1) % items.length;
+        selectedIdx = Math.min(selectedIdx + 1, endIdx - 1);
         items.forEach((el, idx) => {
-          el.classList.toggle('selected', idx === selectedIdx);
+          el.classList.toggle('selected', idx === selectedIdx - startIdx);
         });
-        items[selectedIdx].scrollIntoView({block: 'nearest'});
+        items[selectedIdx - startIdx]?.scrollIntoView({block: 'nearest'});
         e.preventDefault();
       } else if (e.key === 'ArrowUp') {
-        selectedIdx = (selectedIdx - 1 + items.length) % items.length;
+        selectedIdx = Math.max(selectedIdx - 1, startIdx);
         items.forEach((el, idx) => {
-          el.classList.toggle('selected', idx === selectedIdx);
+          el.classList.toggle('selected', idx === selectedIdx - startIdx);
         });
-        items[selectedIdx].scrollIntoView({block: 'nearest'});
+        items[selectedIdx - startIdx]?.scrollIntoView({block: 'nearest'});
         e.preventDefault();
       } else if (e.key === 'Enter') {
         const content = list[selectedIdx];
