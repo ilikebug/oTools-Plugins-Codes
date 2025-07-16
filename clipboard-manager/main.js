@@ -61,13 +61,9 @@ class ClipboardManager {
     this.favList = fav;
     this.hideLoading();
     this.renderHistoryList();
-    setInterval(() => {
-      this.saveHistoryList();
-      this.saveFavList();
-    }, 5000);
     this.bindSearchEvents();
     this.bindFavToggleEvent();
-    this.bindContentEvents(); // Only bind once
+    this.bindContentEvents(); 
   }
 
   /**
@@ -88,7 +84,7 @@ class ClipboardManager {
     const content = await this.readClipboardItem();
     if (!content) return; 
      const uniqID = this.generateContentUniqID(content); 
-     if (uniqID == this.lastUniqID) return;  
+     if (uniqID == this.lastUniqID) return;   
      this.lastUniqID = uniqID
      // execute set history item
      this.addContent2HistoryList(content)
@@ -120,6 +116,7 @@ class ClipboardManager {
     }
     this.historyList.push(content);
     this.scheduleRender();
+    this.saveHistoryList(); 
   }
 
   getHistoryList() {
@@ -127,7 +124,7 @@ class ClipboardManager {
   }
 
   async saveHistoryList() {
-    await this.setHistory(this.historyList)
+    await window.otools.setDbValue(this.DB_NAME, this.HISTORY_KEY, this.historyList);
   } 
 
   // Only render when data changes
@@ -312,11 +309,6 @@ class ClipboardManager {
     }
     return []
   }
- 
-  // Set History
-  async setHistory(list) {
-    await window.otools.setDbValue(this.DB_NAME, this.HISTORY_KEY, list);
-  }
 
   // Read clipboard content (prefer text, then image)
   async readClipboardItem() {
@@ -349,15 +341,16 @@ class ClipboardManager {
     return [];
   }
 
-  async saveFavList() {
+  async saveFavList() { 
     await window.otools.setDbValue(this.DB_NAME, this.FAV_KEY, this.favList);
   }
 
   addToFav(item) {
     const uniqID = this.generateContentUniqID(item);
-    if (!this.favList.find(f => this.generateContentUniqID(f) === uniqID)) {
+    if (!this.favList.find(f => this.generateContentUniqID(f) === uniqID)) { 
       this.favList.push(item);
       this.scheduleRender();
+      this.saveFavList(); // Immediately save after change
     }
   }
 
@@ -367,6 +360,7 @@ class ClipboardManager {
     this.favList = this.favList.filter(f => this.generateContentUniqID(f) !== uniqID);
     if (this.favList.length !== before) {
       this.scheduleRender();
+      this.saveFavList(); // Immediately save after change
     }
   }
   
