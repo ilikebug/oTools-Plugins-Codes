@@ -5,7 +5,8 @@ const WebpackObfuscator = require('webpack-obfuscator');
 module.exports = {
   entry: {
     main: './main.js',
-    preload: './preload.js'
+    preload: './preload.js',
+    clusterize: './clusterize.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -61,6 +62,6 @@ module.exports = {
       selfDefending: true,
       splitStrings: true,
       splitStringsChunkLength: 8
-    }, ['preload.js']) // 只混淆 main.js，不混淆 preload.js
+    }, ['preload.js']) 
   ]
 }; 
