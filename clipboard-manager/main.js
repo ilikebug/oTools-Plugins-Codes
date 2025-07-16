@@ -4,44 +4,70 @@
 
 class ClipboardManager {
   constructor() {
+    // Polling interval for clipboard
     this.POLL_INTERVAL = 100;
-    this.HISTORY_LIST_MAX = 100
+    // Maximum number of clipboard history items
+    this.HISTORY_LIST_MAX = 100;
     this.HISTORY_KEY = 'clipboard_history';
     this.FAV_KEY = 'clipboard_fav';
-    this.DB_NAME = 'clipboard_db'
-  
-    this.listenerEnable = false
+    this.DB_NAME = 'clipboard_db';
+    this.listenerEnable = false;
     this.lastUniqID = null;
-
-    this.historyList = [] 
-    this.favList = []
-    this.showFavOnly = false 
+    this.historyList = [];
+    this.favList = [];
+    this.showFavOnly = false;
     this.clusterize = null;
-
+    this._needRender = false; // Mark if render is needed
+    this._renderTimer = null; // Throttle render
+    this._loading = false;
+    this._binded = false; // Mark if event is already binded
     this.init();
   }
-  
+
+  // Show loading animation
+  showLoading() {
+    const contentArea = document.getElementById('contentArea');
+    if (contentArea) {
+      contentArea.innerHTML = '<div class="empty">Loading...</div>';
+    }
+    this._loading = true;
+  }
+
+  // Hide loading animation
+  hideLoading() {
+    this._loading = false;
+  }
+
+  // Throttle render to avoid frequent calls
+  scheduleRender() {
+    if (this._renderTimer) clearTimeout(this._renderTimer);
+    this._renderTimer = setTimeout(() => {
+      this.renderHistoryList();
+    }, 60);
+  }
+
   /**
    * Initialize the plugin
    */
   async init() {
+    this.showLoading();
     await this.startClipboardListener();
-
-    // init history list
-    this.historyList = await this.getHistory() 
-    // init fav list
-    this.favList = await this.getFavList()
-    // render history list
-    this.renderHistoryList()
-    // scheduled storage history & fav
+    // Load history and fav in parallel
+    const [history, fav] = await Promise.all([
+      this.getHistory(),
+      this.getFavList()
+    ]);
+    this.historyList = history;
+    this.favList = fav;
+    this.hideLoading();
+    this.renderHistoryList();
     setInterval(() => {
       this.saveHistoryList();
       this.saveFavList();
-    }, 5000);  
-
-    // Bind search events
+    }, 5000);
     this.bindSearchEvents();
     this.bindFavToggleEvent();
+    this.bindContentEvents(); // Only bind once
   }
 
   /**
@@ -87,11 +113,13 @@ class ClipboardManager {
     return hash.toString(36);
   }
 
+  // Only call render when data changes
   addContent2HistoryList(content) {
     if (this.historyList.length >= this.HISTORY_LIST_MAX) {
       this.historyList.shift();
     }
-    this.historyList.push(content); 
+    this.historyList.push(content);
+    this.scheduleRender();
   }
 
   getHistoryList() {
@@ -102,98 +130,66 @@ class ClipboardManager {
     await this.setHistory(this.historyList)
   } 
 
-  /**
-   * Render clipboard history list, optimized with virtual list for performance
-   */
+  // Only render when data changes
   renderHistoryList(list) {
+    if (this._loading) return;
+    // Ensure DOM is ready before Clusterize init
+    const contentArea = document.getElementById('contentArea');
+    const scrollArea = document.getElementById('scrollArea');
+    if (!contentArea || !scrollArea) {
+      setTimeout(() => this.renderHistoryList(list), 50);
+      return;
+    }
     if (this.showFavOnly) {
       list = [...this.favList].reverse();
     } else if (!list) {
       list = [...this.historyList].reverse();
     }
-    const mainContent = document.querySelector('.main-content');
-    const scrollArea = document.getElementById('scrollArea');
-    const contentArea = document.getElementById('contentArea');
     if (!list || list.length === 0) {
       if (contentArea) contentArea.innerHTML = '<div class="empty">No clipboard history.</div>';
+      if (this.clusterize) this.clusterize.update([]);
       return;
     }
-    // Generate HTML for each item
-    const rows = list.map((item, idx) => {
-      const isFav = this.isFav(item) ? 'fav' : '';
-      const starIcon = `<button class="clip-fav-btn ${isFav}" data-index="${idx}" title="Favorite">
-        <svg viewBox="0 0 20 20" fill="none" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10 15l-5.09 2.67 1-5.82L2 7.97l5.91-.86L10 2.5l2.09 4.61 5.91.86-4.27 4.88 1 5.82z" stroke="#2563eb" stroke-width="1.5" fill="${this.isFav(item) ? '#ffd600' : 'none'}"/>
-        </svg>
-      </button>`;
-      if (item.type === 'text') {
-        return `<div class='clip-item' data-index='${idx}'>
-          <div class='clip-content' data-fulltext="${this.escapeHtml(item.data)}">${this.escapeHtml(item.data)}</div>
-          ${starIcon}
-        </div>`;
-      } else if (item.type === 'image') {
-        return `<div class='clip-item' data-index='${idx}'>
-          <img class='clip-img' src='${item.data}' loading="lazy" />
-          ${starIcon}
-        </div>`;
-      } else {
-        return `<div class='clip-item' data-index='${idx}'>
-          <div class='clip-content'>[Unknown type]</div>
-          ${starIcon}
-        </div>`;
-      }
-    });
-    // Initialize or update Clusterize
+    // Generate HTML string array for Clusterize
+    const htmlRows = list.map((item, idx) => this.renderClipItem(item, idx));
     if (!this.clusterize) {
       this.clusterize = new window.Clusterize({
-        rows,
+        rows: htmlRows,
         scrollId: 'scrollArea',
         contentId: 'contentArea',
         no_data_text: ''
       });
     } else {
-      this.clusterize.update(rows);
+      this.clusterize.update(htmlRows);
     }
-    // Event delegation binding
-    if (contentArea) {
-      contentArea.onclick = async (e) => {
-        const item = e.target.closest('.clip-item');
-        if (!item) return;
-        if (e.target.closest('.clip-fav-btn')) return;
-        const idx = item.getAttribute('data-index');
-        const content = list[idx];
-        await this.copyToClipboard(content);
-        await window.otools.hideWindow();
-      };
-      contentArea.querySelectorAll('.clip-fav-btn').forEach(btn => {
-        btn.onclick = (e) => {
-          e.stopPropagation();
-          const idx = btn.getAttribute('data-index');
-          const content = list[idx];
-          if (this.isFav(content)) {
-            this.removeFromFav(content);
-          } else {
-            this.addToFav(content);
-          }
-          this.renderHistoryList(list);
-        };
-      });
-      // tooltip
-      contentArea.querySelectorAll('.clip-content').forEach(el => {
-        el.addEventListener('mouseenter', (e) => {
-          el.style.maxHeight = 'none';
-          el.style.webkitLineClamp = 'unset';
-          el.style.overflow = 'visible';
-        });
-        el.addEventListener('mouseleave', (e) => {
-          el.style.maxHeight = '60px';
-          el.style.webkitLineClamp = 3;
-          el.style.overflow = 'hidden';
-        });
-      });
-    }
-    // Keyboard navigation still uses the original method
+    // Important: Bind keyboard navigation after each render
     this.bindKeyboardNavigation(list);
+  }
+
+  // Render a single clipboard item
+  renderClipItem(item, idx) {
+    const isFav = this.isFav(item) ? 'fav' : '';
+    const starIcon = `<button class="clip-fav-btn ${isFav}" data-index="${idx}" title="Favorite">
+      <svg viewBox="0 0 20 20" fill="none" width="18" height="18" xmlns="http://www.w3.org/2000/svg">
+        <path d="M10 15l-5.09 2.67 1-5.82L2 7.97l5.91-.86L10 2.5l2.09 4.61 5.91.86-4.27 4.88 1 5.82z" stroke="#2563eb" stroke-width="1.5" fill="${this.isFav(item) ? '#ffd600' : 'none'}"/>
+      </svg>
+    </button>`;
+    if (item.type === 'text') {
+      return `<div class='clip-item' data-index='${idx}'>
+        <div class='clip-content' data-fulltext="${this.escapeHtml(item.data)}">${this.escapeHtml(item.data)}</div>
+        ${starIcon}
+      </div>`;
+    } else if (item.type === 'image') {
+      return `<div class='clip-item' data-index='${idx}'>
+        <img class='clip-img' src='${item.data}' loading="lazy" />
+        ${starIcon}
+      </div>`;
+    } else {
+      return `<div class='clip-item' data-index='${idx}'>
+        <div class='clip-content'>[Unknown type]</div>
+        ${starIcon}
+      </div>`;
+    }
   }
 
   // Keyboard navigation for clipboard items
@@ -361,19 +357,72 @@ class ClipboardManager {
     const uniqID = this.generateContentUniqID(item);
     if (!this.favList.find(f => this.generateContentUniqID(f) === uniqID)) {
       this.favList.push(item);
+      this.scheduleRender();
     }
   }
 
   removeFromFav(item) {
     const uniqID = this.generateContentUniqID(item);
+    const before = this.favList.length;
     this.favList = this.favList.filter(f => this.generateContentUniqID(f) !== uniqID);
+    if (this.favList.length !== before) {
+      this.scheduleRender();
+    }
   }
   
   isFav(item) {
     const uniqID = this.generateContentUniqID(item);
     return this.favList.some(f => this.generateContentUniqID(f) === uniqID);
   }
+
+  // Only bind content events once, use event delegation
+  bindContentEvents() {
+    if (this._binded) return;
+    this._binded = true;
+    const contentArea = document.getElementById('contentArea');
+    if (!contentArea) return;
+    contentArea.addEventListener('click', async (e) => {
+      const item = e.target.closest('.clip-item');
+      if (!item) return;
+      if (e.target.closest('.clip-fav-btn')) return;
+      const idx = item.getAttribute('data-index');
+      const list = this.showFavOnly ? [...this.favList].reverse() : [...this.historyList].reverse();
+      const content = list[idx];
+      await this.copyToClipboard(content);
+      await window.otools.hideWindow();
+    });
+    contentArea.addEventListener('click', (e) => {
+      const btn = e.target.closest('.clip-fav-btn');
+      if (!btn) return;
+      e.stopPropagation();
+      const idx = btn.getAttribute('data-index');
+      const list = this.showFavOnly ? [...this.favList].reverse() : [...this.historyList].reverse();
+      const content = list[idx];
+      if (this.isFav(content)) {
+        this.removeFromFav(content);
+      } else {
+        this.addToFav(content);
+      }
+    });
+    // Tooltip events
+    contentArea.addEventListener('mouseenter', (e) => {
+      const el = e.target.closest('.clip-content');
+      if (!el) return;
+      el.style.maxHeight = 'none';
+      el.style.webkitLineClamp = 'unset';
+      el.style.overflow = 'visible';
+    }, true);
+    contentArea.addEventListener('mouseleave', (e) => {
+      const el = e.target.closest('.clip-content');
+      if (!el) return;
+      el.style.maxHeight = '60px';
+      el.style.webkitLineClamp = 3;
+      el.style.overflow = 'hidden';
+    }, true);
+  }
 } 
 
 
-window.clipboard = new ClipboardManager()
+window.onload = function() {
+  window.clipboard = new ClipboardManager();
+}

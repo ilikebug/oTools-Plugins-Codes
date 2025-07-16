@@ -17,7 +17,8 @@ const filesToCopy = [
   'index.html',
   'index.css',
   'icon.png',
-  'plugin.json'
+  'plugin.json',
+  'clusterize.js'
 ];
 
 console.log('📁 Copying static files...');

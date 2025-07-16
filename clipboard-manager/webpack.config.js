@@ -6,7 +6,6 @@ module.exports = {
   entry: {
     main: './main.js',
     preload: './preload.js',
-    clusterize: './clusterize.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
