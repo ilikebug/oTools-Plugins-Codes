@@ -451,10 +451,8 @@ class PasswordManager {
       if (!encryptedData || !password) {
         return null;
       }
-      
       // Handle different encrypted data formats
       let data = encryptedData;
-      
       // If data is a string, try to parse it
       if (typeof data === 'string') {
         try {
@@ -463,17 +461,14 @@ class PasswordManager {
           return null;
         }
       }
-      
       // Validate encrypted data structure
       if (!data.encrypted || !data.iv || !data.salt) {
         return null;
       }
-      
       // Convert arrays to Uint8Array if needed
       const encrypted = Array.isArray(data.encrypted) ? new Uint8Array(data.encrypted) : data.encrypted;
       const iv = Array.isArray(data.iv) ? new Uint8Array(data.iv) : data.iv;
       const salt = Array.isArray(data.salt) ? new Uint8Array(data.salt) : data.salt;
-      
       const encoder = new TextEncoder();
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
@@ -482,7 +477,6 @@ class PasswordManager {
         false,
         ['deriveBits', 'deriveKey']
       );
-      
       const key = await crypto.subtle.deriveKey(
         {
           name: 'PBKDF2',
@@ -495,7 +489,6 @@ class PasswordManager {
         true,
         ['decrypt']
       );
-      
       const decryptedContent = await crypto.subtle.decrypt(
         {
           name: 'AES-GCM',
@@ -504,15 +497,12 @@ class PasswordManager {
         key,
         encrypted
       );
-      
       const decoder = new TextDecoder();
       const decryptedText = decoder.decode(decryptedContent);
-      
       // Validate decrypted content
       if (!decryptedText || decryptedText.trim() === '') {
         return null;
       }
-      
       try {
         return JSON.parse(decryptedText);
       } catch (parseError) {
@@ -1532,45 +1522,41 @@ class PasswordManager {
     }
   }
 
-  /**
-   * Sync passwords to Google Drive
-   */
   async syncToCloud() {
     try {
       // Get encrypted passwords from database (actual encrypted data)
       const result = await window.otools.getDbValue(this.DB_NAME, this.PASSWORDS_KEY);
       if (!result || !result.success || !result.value) {
-        this.showNotification('No passwords to sync', 'info');
+        this.showNotification('No passwords to sync', 'info'); // 静默提示
         return false;
       }
-      
+      // Check if data is an empty array
+      if (Array.isArray(result.value) && result.value.length === 0) {
+        this.showNotification('No passwords to sync', 'info'); // 静默提示，合并
+        return false;
+      }
       // Ensure data is properly formatted for cloud storage
       const cloudData = {
         version: '1.0',
         timestamp: Date.now(),
         data: result.value
       };
-      
       // Upload encrypted data to Google Drive
       const uploadResult = await window.plugin.googleDrive.uploadToDrive(cloudData);
-      
       if (uploadResult.success) {
-        this.showNotification('Successfully synced to Google Drive!', 'success');
+        this.showNotification('Successfully synced to Google Drive!', 'info'); // 静默提示
         this.updateSyncStatus();
         return true;
       } else {
-        this.showNotification('Failed to sync to Google Drive: ' + uploadResult.error, 'error');
+        this.showNotification('Failed to sync to Google Drive: ' + uploadResult.error, 'error'); // 失败弹窗
         return false;
       }
     } catch (error) {
-      this.showNotification('Sync failed: ' + error.message, 'error');
+      this.showNotification('Sync failed: ' + error.message, 'error'); // 失败弹窗
       return false;
     }
   }
 
-  /**
-   * Sync passwords from Google Drive with local-first merge strategy
-   */
   async syncFromCloudWithMerge() {
     try {
       // Download from Google Drive
@@ -1579,95 +1565,101 @@ class PasswordManager {
       if (result.success) {
         // Handle different cloud data formats
         let cloudData = result.data;
-        
+        // If cloudData is a Blob, convert to string
+        if (cloudData instanceof Blob) {
+          cloudData = await cloudData.text();
+        }
         // If data is a string, try to parse it
         if (typeof cloudData === 'string') {
           try {
             cloudData = JSON.parse(cloudData);
           } catch (parseError) {
-            this.showNotification('Invalid cloud data format. Please reset cloud sync.', 'error');
+            this.showNotification('Invalid cloud data format. Please reset cloud sync.', 'error'); // 失败弹窗
             return false;
           }
         }
-        
-        // Handle new cloud data format with version and timestamp
-        if (cloudData && cloudData.data && Array.isArray(cloudData.data)) {
-          cloudData = cloudData.data;
-        } else if (!Array.isArray(cloudData)) {
-          this.showNotification('Invalid cloud data format. Please reset cloud sync.', 'error');
+        // Compatible with both new and old formats: use data if it is an array, otherwise use cloudData directly
+        let encryptedArray = [];
+        if (cloudData && Array.isArray(cloudData.data)) {
+          encryptedArray = cloudData.data;
+        } else if (Array.isArray(cloudData)) {
+          encryptedArray = cloudData;
+        } else {
+          this.showNotification('Invalid cloud data format. Please reset cloud sync.', 'error'); // 失败弹窗
           return false;
         }
-        
-        // Decrypt each password in the array
-        const decryptedPasswords = await Promise.all(cloudData.map(async (encryptedPassword) => {
+        // Fault-tolerant decryption: skip items with wrong format or failed decryption
+        const decryptedPasswords = [];
+        let failedCount = 0;
+        for (let i = 0; i < encryptedArray.length; i++) {
+          const encryptedPassword = encryptedArray[i];
+          let decrypted = null;
           try {
-            return await this.decryptData(encryptedPassword, this.masterPassword);
+            // Check encrypted object structure
+            if (!encryptedPassword || typeof encryptedPassword !== 'object' || !encryptedPassword.encrypted || !encryptedPassword.iv || !encryptedPassword.salt) {
+              failedCount++;
+              continue;
+            }
+            decrypted = await this.decryptData(encryptedPassword, this.masterPassword);
+            if (decrypted) {
+              decryptedPasswords.push(decrypted);
+            } else {
+              failedCount++;
+            }
           } catch (error) {
-            return null;
+            failedCount++;
+            continue;
           }
-        }));
-        
-        // Filter out any failed decryptions
-        const cloudPasswords = decryptedPasswords.filter(pwd => pwd !== null);
-        
-        if (cloudPasswords.length === 0) {
-          this.showNotification('Failed to decrypt any passwords from cloud. Please check your master password.', 'error');
+        }
+        if (decryptedPasswords.length === 0) {
+          this.showNotification('Failed to decrypt any passwords from cloud. The master password may be incorrect or the data is corrupted.', 'error'); // 失败弹窗
           return false;
         }
-        
+        if (failedCount > 0) {
+          this.showNotification(`Some cloud data failed to parse. Successfully imported ${decryptedPasswords.length} items.`, 'info'); // 静默提示
+        } else {
+          this.showNotification(`Successfully imported ${decryptedPasswords.length} passwords from cloud.`, 'info'); // 静默提示
+        }
         // Merge strategy: local-first
-        const mergedPasswords = this.mergePasswordsLocalFirst(cloudPasswords);
-        
+        const mergedPasswords = this.mergePasswordsLocalFirst(decryptedPasswords);
         // Update password list with merged data
         this.passwordList = mergedPasswords;
         await this.savePasswords();
         this.renderPasswordList();
-        
-        this.showNotification(`Successfully merged ${cloudPasswords.length} passwords from Google Drive!`, 'success');
         this.updateSyncStatus();
         return true;
       } else {
-        this.showNotification('Failed to sync from Google Drive: ' + result.error, 'error');
+        this.showNotification('Failed to sync from cloud: ' + result.error, 'error'); // 失败弹窗
         return false;
       }
     } catch (error) {
-      this.showNotification('Sync failed: ' + error.message, 'error');
+      this.showNotification('Sync failed: ' + error.message, 'error'); // 失败弹窗
       return false;
     }
   }
 
-  /**
-   * Merge passwords with local-first strategy
-   * @param {Array} cloudPasswords - Passwords from cloud
-   * @returns {Array} Merged passwords
-   */
   mergePasswordsLocalFirst(cloudPasswords) {
     const localPasswords = [...this.passwordList];
     const mergedPasswords = [...localPasswords];
-    
     // Create a map of local passwords by ID for quick lookup
     const localPasswordMap = new Map();
     localPasswords.forEach(pwd => {
       localPasswordMap.set(pwd.id, pwd);
     });
-    
     // Process cloud passwords
     cloudPasswords.forEach(cloudPwd => {
       const localPwd = localPasswordMap.get(cloudPwd.id);
-      
       if (!localPwd) {
         // This password doesn't exist locally, add it
         mergedPasswords.push(cloudPwd);
       }
       // Password exists locally, keep local version (local-first strategy)
     });
-    
     // Show merge summary
     const newFromCloud = cloudPasswords.filter(cloudPwd => !localPasswordMap.has(cloudPwd.id)).length;
     if (newFromCloud > 0) {
-      this.showNotification(`Added ${newFromCloud} new passwords from cloud`, 'info');
+      this.showNotification(`Added ${newFromCloud} new passwords from cloud`, 'info'); // 静默提示
     }
-    
     return mergedPasswords;
   }
 

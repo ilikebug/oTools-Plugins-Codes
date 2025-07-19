@@ -68,21 +68,6 @@ initializeOAuth2Client(oauthPort || 10000);
 
 // Expose plugin object with generateTotp and Google Drive APIs
 contextBridge.exposeInMainWorld('plugin', {
-  getplatformName: () => {
-    // This would be implemented by the main process
-    return process.platform; // Default to macOS
-  },
-  generateTotp: (secret) => {
-    try {
-      // Clean up secret: remove spaces, uppercase
-      const cleanSecret = (secret || '').replace(/\s+/g, '').toUpperCase();
-      if (!cleanSecret) return '';
-      return authenticator.generate(cleanSecret);
-    } catch (e) {
-      return '';
-    }
-  },
-  
   // Google Drive API methods
   googleDrive: {
     // Get current OAuth port
@@ -163,8 +148,8 @@ contextBridge.exposeInMainWorld('plugin', {
     },
     
     // Upload encrypted data to Google Drive
-    uploadToDrive: async (data, filename = 'passwords.enc') => {
-      try {
+    uploadToDrive: async (data, filename = 'otools-passwords.enc') => {
+      try { 
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
           const refreshResult = await this.refreshToken();
@@ -213,7 +198,7 @@ contextBridge.exposeInMainWorld('plugin', {
     },
     
     // Download encrypted data from Google Drive
-    downloadFromDrive: async (filename = 'passwords.enc') => {
+    downloadFromDrive: async (filename = 'otools-passwords.enc') => {
       try {
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
@@ -246,7 +231,7 @@ contextBridge.exposeInMainWorld('plugin', {
     },
     
     // Delete file from Google Drive
-    deleteFromDrive: async (filename = 'passwords.enc') => {
+    deleteFromDrive: async (filename = 'otools-passwords.enc') => {
       try {
         // Ensure we have valid tokens
         if (!oauth2Client.credentials.access_token) {
