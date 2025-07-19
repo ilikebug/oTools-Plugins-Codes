@@ -330,6 +330,9 @@ class ClipboardManager {
     } else if (item.type === 'image') {
       await window.otools.writeClipboardImage(item.data);
     }
+    setTimeout(async () => {
+      await window.otools.simulateKeyboard('keyTap', {key: 'v', modifiers: 'command'})
+    }, 200)
   }
 
   // fav methods

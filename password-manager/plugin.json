@@ -12,12 +12,12 @@
     "width": 400,
     "height": 480,
     "frame": false,
-    "hideOnBlur": false
+    "hideOnBlur": true
   },
   "startupMode": "dependent",
   "popupAtCursor": true,
   "enabled": true,
-  "debug": false,    
+  "debug": false,
   "dir": "/Users/zhangye/Project/NodejsProject/oTools-Plugins-Codes/password-manager",
-  "loadedAt": "2025-07-19T12:18:45.142Z"
+  "loadedAt": "2025-07-19T14:01:51.161Z"
 }
