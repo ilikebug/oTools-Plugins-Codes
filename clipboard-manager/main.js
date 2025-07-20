@@ -332,7 +332,7 @@ class ClipboardManager {
     }
     setTimeout(async () => {
       await window.otools.simulateKeyboard('keyTap', {key: 'v', modifiers: 'command'})
-    }, 200)
+    }, 300)
   }
 
   // fav methods
